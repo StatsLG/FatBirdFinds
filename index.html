@@ -1,6 +1,10 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+  <!-- Prevent stale caching during development/testing -->
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <meta http-equiv="Expires" content="0" />
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Fatty Bird — Home</title>
@@ -31,8 +35,10 @@
 <body>
   <div class="container">
     <header>
-      <h1>🐦 Fatty Bird — Home</h1>
+      <button id="resetBtn" class="btn" title="Clear localStorage & caches for this site" style="background:#ffb703;color:#00121f;display:none">Reset Site Data</button>
       <a id="playBtn" href="fattybird.html" class="btn" title="Launch the game">Play</a>
+      <span id="buildTag" class="muted"></span>
+      <span id="backendStatus" class="muted"></span>
     </header>
 
     <section class="cards">
@@ -66,54 +72,68 @@
       <div class="card">
         <h2 style="margin-top:0">About</h2>
         <p>This is the Fatty Bird hub. Use <b>Play</b> to launch the game, track total plays, and post your best score to the leaderboard.</p>
-        <p class="muted">Want a global leaderboard shared across all visitors? See the code comment for <b>BACKEND_URL</b> — plug in a simple Apps Script or Worker endpoint and you’re done.</p>
+        <p class="muted">This page supports a global leaderboard via Google Apps Script.</p>
       </div>
     </section>
   </div>
 
   <script>
   "use strict";
+  // ========= VERSION & MODE =========
+  const VERSION = '1.0.2'; // bump after each deploy to bust caches
+  function isDev(){
+    const host = location.hostname;
+    let qs; try { qs = new URLSearchParams(location.search); } catch { qs = { has: ()=>false }; }
+    return host === 'localhost' || host === '127.0.0.1' || qs.has('dev');
+  }
+
   // ========= CONFIG =========
   // CountAPI namespace (change to something unique for your site)
   const COUNT_NS = 'statslg-fattybird-001';
-  // Optional: backend endpoint for a GLOBAL leaderboard.
-  // If left empty, we fall back to a local (this-device) leaderboard stored in localStorage.
-  // Expected API:
-  //   GET  BACKEND_URL + '/top?limit=10' -> [{name, score, ts}] sorted desc
-  //   POST BACKEND_URL + '/score' JSON {name, score} -> {ok:true}
-  const BACKEND_URL = '';
+  // Global leaderboard backend (Apps Script Web App URL ending with /exec)
+  const BACKEND_URL = 'https://script.google.com/macros/s/AKfycbyTeCvTQrtURE6Dd3O0SxB_qb4su9BZaSOPZHI_BsEAngGf33NFsoEGx6BRpAXn9Gw1/exec';
 
-  // ========= COUNTERS =========
+  // ========= UTILS =========
+  function fmt(n){ return (n??0).toLocaleString(); }
+  function setText(el, v){ if(el) el.textContent = v; }
+
+  // ========= STATS COUNTERS =========
   const pvEl = document.getElementById('homeViews');
   const uvEl = document.getElementById('homeUniques');
   const playsEl = document.getElementById('totalPlays');
   const UV_KEY = 'fatty_home_uv_seen';
 
-  function fmt(n){ return (n??0).toLocaleString(); }
-  function setText(el, v){ if(el) el.textContent = v; }
-
   function updateCounters(){
     // Always increment homepage views
-    fetch(`https://api.countapi.xyz/hit/${COUNT_NS}/homeviews`).then(r=>r.json()).then(d=>setText(pvEl, fmt(d.value))).catch(()=>setText(pvEl,'n/a'));
+    fetch(`https://api.countapi.xyz/hit/${COUNT_NS}/homeviews`, {cache:'no-store'})
+      .then(r=>r.json()).then(d=>setText(pvEl, fmt(d.value)))
+      .catch(()=>setText(pvEl,'n/a'));
 
     // Uniques per device/browser
     const uniqueEndpoint = localStorage.getItem(UV_KEY) ? 'get' : 'hit';
-    fetch(`https://api.countapi.xyz/${uniqueEndpoint}/${COUNT_NS}/homeuniques`).then(r=>r.json()).then(d=>{
-      setText(uvEl, fmt(d.value));
-      localStorage.setItem(UV_KEY,'1');
-    }).catch(()=>setText(uvEl,'n/a'));
+    fetch(`https://api.countapi.xyz/${uniqueEndpoint}/${COUNT_NS}/homeuniques`, {cache:'no-store'})
+      .then(r=>r.json()).then(d=>{ setText(uvEl, fmt(d.value)); localStorage.setItem(UV_KEY,'1'); })
+      .catch(()=>setText(uvEl,'n/a'));
 
-    // Get total plays (do not increment here; we increment when user clicks Play)
-    fetch(`https://api.countapi.xyz/get/${COUNT_NS}/plays`).then(r=>r.json()).then(d=>setText(playsEl, fmt(d.value||0))).catch(()=>setText(playsEl,'n/a'));
+    // Get total plays (do not increment here; increment when user clicks Play)
+    fetch(`https://api.countapi.xyz/get/${COUNT_NS}/plays`, {cache:'no-store'})
+      .then(r=>r.json()).then(d=>setText(playsEl, fmt(d.value||0)))
+      .catch(()=>setText(playsEl,'n/a'));
   }
 
-  // Increment plays when the Play button is clicked (fire-and-forget)
+  // ========= PLAY BUTTON =========
   const playBtn = document.getElementById('playBtn');
   if(playBtn){
+    // Always append a version to bypass stale caches; dev uses a fresh timestamp
+    const v = isDev() ? Date.now() : VERSION;
+    playBtn.href = `fattybird.html?v=${v}`;
     playBtn.addEventListener('click', function(){
-      fetch(`https://api.countapi.xyz/hit/${COUNT_NS}/plays`).catch(()=>{});
+      fetch(`https://api.countapi.xyz/hit/${COUNT_NS}/plays`, {cache:'no-store'}).catch(()=>{});
     });
   }
+  // Show build tag
+  const buildTag = document.getElementById('buildTag');
+  if(buildTag){ buildTag.textContent = `Build: ${VERSION}${isDev() ? ' (dev)' : ''}`; }
 
   // ========= LEADERBOARD =========
   const deviceBestEl = document.getElementById('deviceBest');
@@ -121,6 +141,7 @@
   const nameInput = document.getElementById('playerName');
   const submitBtn = document.getElementById('submitBest');
   const refreshBtn = document.getElementById('refreshLB');
+  const backendStatus = document.getElementById('backendStatus');
 
   function getDeviceBest(){
     const best = +(localStorage.getItem('best_flappy') || '0');
@@ -139,10 +160,8 @@
     });
   }
 
-  // ===== Local (fallback) leaderboard =====
-  function getLocalLB(){
-    try { return JSON.parse(localStorage.getItem('lb_local')||'[]'); } catch { return []; }
-  }
+  // Local fallback leaderboard
+  function getLocalLB(){ try { return JSON.parse(localStorage.getItem('lb_local')||'[]'); } catch { return []; } }
   function setLocalLB(arr){ localStorage.setItem('lb_local', JSON.stringify(arr)); }
   function upsertLocal(name, score){
     const arr = getLocalLB();
@@ -158,12 +177,14 @@
   async function loadLeaderboard(){
     if(BACKEND_URL){
       try{
-        const res = await fetch(`${BACKEND_URL}/top?limit=10`, {cache:'no-store'});
+        // GAS Web App: GET to base URL with ?limit=10
+        const res = await fetch(`${BACKEND_URL}?limit=10`, {cache:'no-store'});
         const data = await res.json();
+        backendStatus && (backendStatus.textContent = ' · Backend: connected');
         renderRows(Array.isArray(data)? data : []);
         return;
-      }catch(e){ console.warn('Backend fetch failed, using local LB', e); }
-    }
+      }catch(e){ console.warn('Backend fetch failed, using local LB', e); backendStatus && (backendStatus.textContent = ' · Backend: offline'); }
+    } else { backendStatus && (backendStatus.textContent = ' · Backend: local only'); }
     renderRows(getLocalLB());
   }
 
@@ -174,7 +195,8 @@
 
     if(BACKEND_URL){
       try{
-        await fetch(`${BACKEND_URL}/score`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({name, score})});
+        // Use form-encoded body to avoid CORS preflight; Apps Script reads e.parameter
+        await fetch(BACKEND_URL, { method:'POST', body:new URLSearchParams({ name, score: String(score) }) });
       }catch(e){ console.warn('Backend submit failed, storing locally', e); upsertLocal(name, score); }
     } else {
       upsertLocal(name, score);
@@ -183,44 +205,31 @@
     alert('Score submitted!');
   }
 
-  // Wire up
-  submitBtn?.addEventListener('click', submitScore);
-  refreshBtn?.addEventListener('click', loadLeaderboard);
+  if(submitBtn){ submitBtn.addEventListener('click', submitScore); }
+  if(refreshBtn){ refreshBtn.addEventListener('click', loadLeaderboard); }
 
-  // Init
+  // ========= DEV RESET BUTTON =========
+  (function(){
+    const resetBtn = document.getElementById('resetBtn');
+    if(!resetBtn) return;
+    resetBtn.style.display = isDev() ? 'inline-block' : 'none';
+    resetBtn.addEventListener('click', function(){
+      try{
+        localStorage.removeItem('fatty_home_uv_seen');
+        localStorage.removeItem('best_flappy');
+        localStorage.removeItem('lb_local');
+        if('caches' in window && caches.keys){ caches.keys().then(keys=>keys.forEach(k=>caches.delete(k))); }
+        if('serviceWorker' in navigator){ navigator.serviceWorker.getRegistrations().then(rs=>rs.forEach(r=>r.unregister())); }
+      }catch(e){ console.warn('Reset error', e); }
+      alert('Site data cleared. Reloading…');
+      location.reload();
+    });
+  })();
+
+  // ========= INIT =========
   updateCounters();
   getDeviceBest();
   loadLeaderboard();
-
-  // ========= OPTIONAL: Cloud / Apps Script backend =========
-  /*
-  QUICK Google Apps Script backend (Spreadsheet-based, public read, tokenless write for simplicity — restrict as you see fit):
-
-  1) Go to https://script.google.com > New project. Paste this code and deploy as Web App (Execute as: Me; Who has access: Anyone).
-
-  const SHEET_NAME = 'Scores';
-  function _sheet(){
-    const ss = SpreadsheetApp.getActive();
-    let sh = ss.getSheetByName(SHEET_NAME);
-    if(!sh){ sh = ss.insertSheet(SHEET_NAME); sh.appendRow(['name','score','ts']); }
-    return sh;
-  }
-  function doPost(e){
-    const body = JSON.parse(e.postData.contents || '{}');
-    const name = String(body.name||'Anonymous').slice(0,24);
-    const score = Number(body.score||0) | 0;
-    if(score>0){ _sheet().appendRow([name, score, Date.now()]); }
-    return ContentService.createTextOutput(JSON.stringify({ok:true})).setMimeType(ContentService.MimeType.JSON);
-  }
-  function doGet(e){
-    const limit = Math.min(50, Number(e.parameter.limit||10));
-    const rows = _sheet().getDataRange().getValues().slice(1).map(r=>({name:r[0], score:Number(r[1])||0, ts:Number(r[2])||Date.now()}));
-    rows.sort((a,b)=>b.score-a.score);
-    return ContentService.createTextOutput(JSON.stringify(rows.slice(0,limit))).setMimeType(ContentService.MimeType.JSON);
-  }
-
-  2) Copy the deployment URL and set BACKEND_URL to that URL (no trailing slash required).
-  */
   </script>
 </body>
 </html>
