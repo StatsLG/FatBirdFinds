@@ -1,9 +1,13 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+  <!-- Prevent stale caching during development/testing -->
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <meta http-equiv="Expires" content="0" />
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Fatty Bird Flies</title>
+  <title>Fatty Bird — Home</title>
   <style>
     :root{ --bg:#0e1b2a; --fg:#e8f0fe; --muted:#9fb3c8; --accent:#52d67a; --card:#122033; }
     *{box-sizing:border-box}
@@ -31,8 +35,9 @@
 <body>
   <div class="container">
     <header>
-      <h1>Fatty Bird Flies</h1>
+      <button id="resetBtn" class="btn" title="Clear localStorage & caches for this site" style="background:#ffb703;color:#00121f;display:none">Reset Site Data</button>
       <a id="playBtn" href="fattybird.html" class="btn" title="Launch the game">Play</a>
+      <span id="buildTag" class="muted"></span>
     </header>
 
     <section class="cards">
@@ -43,6 +48,7 @@
           <div class="pill">Homepage Unique Visitors: <span id="homeUniques">—</span></div>
           <div class="pill">Total Plays: <span id="totalPlays">—</span></div>
         </div>
+        <p class="muted" style="margin-top:8px">“Unique visitors” ≈ unique per device/browser (uses localStorage).</p>
       </div>
 
       <div class="card">
@@ -65,125 +71,33 @@
       <div class="card">
         <h2 style="margin-top:0">About</h2>
         <p>This is the Fatty Bird hub. Use <b>Play</b> to launch the game, track total plays, and post your best score to the leaderboard.</p>
+        <p class="muted">Want a global leaderboard shared across all visitors? See the code comment for <b>BACKEND_URL</b> — plug in a simple Apps Script or Worker endpoint and you’re done.</p>
       </div>
     </section>
   </div>
 
   <script>
   "use strict";
-  // ========= CONFIG =========
-  // CountAPI namespace (change to something unique for your site)
-  const COUNT_NS = 'statslg-fattybird-001';
-  // Optional: backend endpoint for a GLOBAL leaderboard.
-  // If left empty, we fall back to a local (this-device) leaderboard stored in localStorage.
-  // Expected API:
-  //   GET  BACKEND_URL + '/top?limit=10' -> [{name, score, ts}] sorted desc
-  //   POST BACKEND_URL + '/score' JSON {name, score} -> {ok:true}
-  const BACKEND_URL = '';
-
-  // ========= COUNTERS =========
-  const pvEl = document.getElementById('homeViews');
-  const uvEl = document.getElementById('homeUniques');
-  const playsEl = document.getElementById('totalPlays');
-  const UV_KEY = 'fatty_home_uv_seen';
-
-  function fmt(n){ return (n??0).toLocaleString(); }
-  function setText(el, v){ if(el) el.textContent = v; }
-
-  function updateCounters(){
-    // Always increment homepage views
-    fetch(`https://api.countapi.xyz/hit/${COUNT_NS}/homeviews`).then(r=>r.json()).then(d=>setText(pvEl, fmt(d.value))).catch(()=>setText(pvEl,'n/a'));
-
-    // Uniques per device/browser
-    const uniqueEndpoint = localStorage.getItem(UV_KEY) ? 'get' : 'hit';
-    fetch(`https://api.countapi.xyz/${uniqueEndpoint}/${COUNT_NS}/homeuniques`).then(r=>r.json()).then(d=>{
-      setText(uvEl, fmt(d.value));
-      localStorage.setItem(UV_KEY,'1');
-    }).catch(()=>setText(uvEl,'n/a'));
-
-    // Get total plays (do not increment here; we increment when user clicks Play)
-    fetch(`https://api.countapi.xyz/get/${COUNT_NS}/plays`).then(r=>r.json()).then(d=>setText(playsEl, fmt(d.value||0))).catch(()=>setText(playsEl,'n/a'));
-  }
-
-  // Increment plays when the Play button is clicked (fire-and-forget)
-  const playBtn = document.getElementById('playBtn');
-  if(playBtn){
-    playBtn.addEventListener('click', function(){
-      fetch(`https://api.countapi.xyz/hit/${COUNT_NS}/plays`).catch(()=>{});
-    });
-  }
-
-  // ========= LEADERBOARD =========
-  const deviceBestEl = document.getElementById('deviceBest');
-  const lbBody = document.getElementById('lbBody');
-  const nameInput = document.getElementById('playerName');
-  const submitBtn = document.getElementById('submitBest');
-  const refreshBtn = document.getElementById('refreshLB');
-
-  function getDeviceBest(){
-    const best = +(localStorage.getItem('best_flappy') || '0');
-    deviceBestEl.textContent = String(best);
-    return best;
-  }
-
-  function renderRows(rows){
-    lbBody.innerHTML = '';
-    if(!rows || !rows.length){ lbBody.innerHTML = '<tr><td colspan="4" class="muted">No scores yet.</td></tr>'; return; }
-    rows.slice(0,10).forEach((r, i)=>{
-      const tr = document.createElement('tr');
-      const date = new Date(r.ts || Date.now());
-      tr.innerHTML = `<td>${i+1}</td><td>${(r.name||'—')}</td><td>${r.score}</td><td>${date.toLocaleDateString()} ${date.toLocaleTimeString()}</td>`;
-      lbBody.appendChild(tr);
-    });
-  }
-
-  // ===== Local (fallback) leaderboard =====
-  function getLocalLB(){
-    try { return JSON.parse(localStorage.getItem('lb_local')||'[]'); } catch { return []; }
-  }
-  function setLocalLB(arr){ localStorage.setItem('lb_local', JSON.stringify(arr)); }
-  function upsertLocal(name, score){
-    const arr = getLocalLB();
-    const now = Date.now();
-    const idx = arr.findIndex(x=> (x.name||'').toLowerCase() === (name||'').toLowerCase());
-    if(idx>=0){ if(score > +arr[idx].score){ arr[idx] = {name, score:+score, ts: now}; } }
-    else { arr.push({name, score:+score, ts: now}); }
-    arr.sort((a,b)=>b.score-a.score);
-    setLocalLB(arr.slice(0,100));
-    return arr;
-  }
-
-  async function loadLeaderboard(){
-    if(BACKEND_URL){
+  // ========= VERSION & MODE =========
+  const VERSION = '1.0.0'; // bump this after each deploy to bust caches
+  // Reset button clears local data and any Cache Storage (if a Service Worker ever existed)
+  (function(){
+    var resetBtn = document.getElementById('resetBtn');
+    if(!resetBtn) return;
+    // Only show in dev
+    resetBtn.style.display = isDev() ? 'inline-block' : 'none';
+    resetBtn.addEventListener('click', function(){
       try{
-        const res = await fetch(`${BACKEND_URL}/top?limit=10`, {cache:'no-store'});
-        const data = await res.json();
-        renderRows(Array.isArray(data)? data : []);
-        return;
-      }catch(e){ console.warn('Backend fetch failed, using local LB', e); }
-    }
-    renderRows(getLocalLB());
-  }
-
-  async function submitScore(){
-    const name = (nameInput.value||'').trim() || 'Anonymous';
-    const score = getDeviceBest();
-    if(!score){ alert('You have no device best yet. Play the game first!'); return; }
-
-    if(BACKEND_URL){
-      try{
-        await fetch(`${BACKEND_URL}/score`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({name, score})});
-      }catch(e){ console.warn('Backend submit failed, storing locally', e); upsertLocal(name, score); }
-    } else {
-      upsertLocal(name, score);
-    }
-    await loadLeaderboard();
-    alert('Score submitted!');
-  }
-
-  // Wire up
-  submitBtn?.addEventListener('click', submitScore);
-  refreshBtn?.addEventListener('click', loadLeaderboard);
+        localStorage.removeItem('fatty_home_uv_seen');
+        localStorage.removeItem('best_flappy');
+        localStorage.removeItem('lb_local');
+        if('caches' in window && caches.keys){ caches.keys().then(function(keys){ keys.forEach(function(k){ caches.delete(k); }); }); }
+        if('serviceWorker' in navigator){ navigator.serviceWorker.getRegistrations().then(function(rs){ rs.forEach(function(r){ r.unregister(); }); }); }
+      }catch(e){ console.warn('Reset error', e); }
+      alert('Site data cleared. Reloading…');
+      location.reload();
+    });
+  })();
 
   // Init
   updateCounters();
