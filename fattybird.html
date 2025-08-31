@@ -64,16 +64,22 @@
   <script>
   "use strict";
   // ========= CONFIG =========
-  // Your global leaderboard backend (Google Apps Script Web App — ends with /exec)
+  // Shared leaderboard backend (Google Apps Script Web App — ends with /exec)
   const BACKEND_URL = "https://script.google.com/macros/s/AKfycbyTeCvTQrtURE6Dd3O0SxB_qb4su9BZaSOPZHI_BsEAngGf33NFsoEGx6BRpAXn9Gw1/exec";
   // Auto-submit if we already know the player's name:
   const AUTO_SUBMIT_IF_NAME = true;
 
-  // OPTIONAL SPRITES (leave blank to use vector art)
-  const BIRD_IMG_SRC = "";   // e.g. "fbfnobg.png"
-  const PIPE_IMG_SRC = "";   // e.g. "swungnobg.png"
-  const BIRD_SCALE = 1.0;    // relative to default bird size
-  const PIPE_SCALE_X = 1.0;  // relative to default pipe width
+  // Pull the version param from the homepage link to bust caches
+  const qs = new URLSearchParams(location.search);
+  const VERSION = qs.get('v') || "";
+  const ASSET_V = VERSION ? `?v=${VERSION}` : "";
+
+  // YOUR SPRITES (PNG with transparency). Adjust paths if they’re in a folder.
+  const BIRD_IMG_SRC = `fbfnobg.png${ASSET_V}`;    // e.g., 'img/fbfnobg.png' + ASSET_V
+  const PIPE_IMG_SRC = `swungnobg.png${ASSET_V}`;  // e.g., 'img/swungnobg.png' + ASSET_V
+
+  const BIRD_SCALE = 1.0;   // relative to default bird radius*2
+  const PIPE_SCALE_X = 1.0; // relative to default pipe width
 
   // ========= CANVAS =========
   const canvas = document.getElementById('game');
@@ -82,8 +88,16 @@
 
   // ========= SPRITES =========
   const SPRITES = { bird:new Image(), pipe:new Image(), birdReady:false, pipeReady:false };
-  if (BIRD_IMG_SRC) { SPRITES.bird.src = BIRD_IMG_SRC; SPRITES.bird.onload = ()=>SPRITES.birdReady=true; }
-  if (PIPE_IMG_SRC) { SPRITES.pipe.src = PIPE_IMG_SRC; SPRITES.pipe.onload = ()=>SPRITES.pipeReady=true; }
+  if (BIRD_IMG_SRC) {
+    SPRITES.bird.src = BIRD_IMG_SRC;
+    SPRITES.bird.onload = ()=>SPRITES.birdReady=true;
+    SPRITES.bird.onerror = (e)=>console.error("Bird image failed to load:", BIRD_IMG_SRC, e);
+  }
+  if (PIPE_IMG_SRC) {
+    SPRITES.pipe.src = PIPE_IMG_SRC;
+    SPRITES.pipe.onload = ()=>SPRITES.pipeReady=true;
+    SPRITES.pipe.onerror = (e)=>console.error("Pipe image failed to load:", PIPE_IMG_SRC, e);
+  }
 
   // ========= STATE =========
   const bird = { x: 90, y: H*0.4, r: 14, vy: 0 };
@@ -115,9 +129,7 @@
       submitScore(goName.value.trim(), curScore, /*silent*/true);
     }
   }
-  function hideModal(){
-    modal.classList.add('hidden');
-  }
+  function hideModal(){ modal.classList.add('hidden'); }
 
   async function submitScore(name, sc, silent=false){
     try{
@@ -198,9 +210,8 @@
         }
       }
     } else if(!alive){
-      // trigger modal once when death detected
-      if(!modal || !modal.classList.contains('hidden')){ /* already shown */ }
-      else { showModal(score); }
+      // trigger modal once on death
+      if(modal.classList.contains('hidden')){ showModal(score); }
     }
     frame++;
   }
@@ -277,9 +288,7 @@
     ctx.restore();
   }
 
-  function drawGround(){
-    ctx.fillStyle='#3e4c59'; ctx.fillRect(0, H-GROUND_H, W, GROUND_H);
-  }
+  function drawGround(){ ctx.fillStyle='#3e4c59'; ctx.fillRect(0, H-GROUND_H, W, GROUND_H); }
 
   function drawHUD(){
     ctx.fillStyle='rgba(0,0,0,.25)'; ctx.fillRect(8,8,112,56);
@@ -297,7 +306,7 @@
       ctx.fillText('Fly through the gaps!', W/2, H/2 + 16); ctx.textAlign='left';
     }
     if(!alive){
-      // darken behind, but the modal handles the UI
+      // darken behind; modal handles the UI
       ctx.fillStyle='rgba(0,0,0,.45)'; ctx.fillRect(0,0,W,H);
     }
   }
@@ -311,11 +320,7 @@
     drawHUD();
   }
 
-  function loop(){
-    update();
-    render();
-    requestAnimationFrame(loop);
-  }
+  function loop(){ update(); render(); requestAnimationFrame(loop); }
 
   // ========= INPUT =========
   document.addEventListener('keydown', (e)=>{
@@ -341,3 +346,4 @@
   </script>
 </body>
 </html>
+
