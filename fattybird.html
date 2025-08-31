@@ -32,6 +32,7 @@
   <div class="wrap">
     <canvas id="game" width="420" height="640" aria-label="Fatty Bird"></canvas>
     <div class="hud">
+      <a id="homeBtn" class="btn" href="index.html" title="Back to home">Home</a>
       <button id="flapBtn" class="btn" title="Space/Click/Tap to flap">Flap</button>
       <button id="restartBtn" class="btn" title="Enter to restart">Restart</button>
       <span class="muted">Controls: Space / Click / Tap · Restart: Enter</span>
@@ -50,6 +51,7 @@
         <input id="goName" type="text" placeholder="Your name" maxlength="24" />
         <button id="goSubmit" class="btn">Submit to Leaderboard</button>
         <button id="goSkip" class="btn danger">Skip</button>
+        <a id="goHome" class="btn" href="index.html">Home</a>
         <span class="right muted">Submits to shared leaderboard</span>
       </div>
 
@@ -65,7 +67,7 @@
   "use strict";
   // ========= CONFIG =========
   // Shared leaderboard backend (Google Apps Script Web App — ends with /exec)
-  const BACKEND_URL = "https://script.google.com/macros/s/AKfycbxldxYVlz2yxVzewK7eLZQ-3wUljNED6xVgWZHYXvuWfKj_GHcKSpPS8Los6At0muqc/exec";
+  const BACKEND_URL = "https://script.google.com/macros/s/AKfycbyTeCvTQrtURE6Dd3O0SxB_qb4su9BZaSOPZHI_BsEAngGf33NFsoEGx6BRpAXn9Gw1/exec";
   // Auto-submit if we already know the player's name:
   const AUTO_SUBMIT_IF_NAME = true;
 
@@ -78,8 +80,10 @@
   const BIRD_IMG_SRC = `fbfnobg.png${ASSET_V}`;    // e.g., 'img/fbfnobg.png' + ASSET_V
   const PIPE_IMG_SRC = `swungnobg.png${ASSET_V}`;  // e.g., 'img/swungnobg.png' + ASSET_V
 
-  const BIRD_SCALE = 2.0;   // relative to default bird radius*2
-  const PIPE_SCALE_X = 1.0; // relative to default pipe width
+  // If you changed scale visually, match collisions via rHit()
+  const BIRD_SCALE = 2.0;   // you said you set this to 2.0
+  const PIPE_SCALE_X = 1.0;
+  function rHit(){ return 14 * BIRD_SCALE; } // 14 is the base radius (bird.r)
 
   // ========= CANVAS =========
   const canvas = document.getElementById('game');
@@ -114,6 +118,13 @@
   const goSubmit = document.getElementById('goSubmit');
   const goSkip = document.getElementById('goSkip');
   const goAgain = document.getElementById('goAgain');
+  const goHome = document.getElementById('goHome');
+  const homeBtn = document.getElementById('homeBtn');
+
+  // Make Home links carry version (for cache-busting symmetry)
+  const homeUrl = `index.html${VERSION ? `?v=${VERSION}` : ''}`;
+  homeBtn && (homeBtn.href = homeUrl);
+  goHome && (goHome.href = homeUrl);
 
   // Pre-fill name if saved
   goName.value = localStorage.getItem('player_name') || '';
@@ -134,17 +145,22 @@
   async function submitScore(name, sc, silent=false){
     try{
       localStorage.setItem('player_name', name);
-      goStatus.textContent = 'Submitting…';
-      // GAS accepts form-encoded without custom headers
+      if(!silent) goStatus.textContent = 'Submitting…';
       const res = await fetch(BACKEND_URL, {
         method: 'POST',
+        // Form-encoded to avoid CORS preflight; Apps Script reads e.parameter
         body: new URLSearchParams({ name, score: String(sc) })
       });
-      if(!res.ok){ throw new Error('HTTP '+res.status); }
-      if(!silent){ goStatus.textContent = 'Submitted ✔'; }
+      // We don't rely on response body (some blockers make it opaque). Only check status.
+      if (!res || (res.status !== 200 && res.type !== 'opaque')) throw new Error('Submit failed');
+      if(!silent) goStatus.textContent = (res.type === 'opaque') ? 'Submitted (pending)' : 'Submitted ✔';
     }catch(e){
-      if(!silent){ goStatus.textContent = 'Submit failed (will not affect your device best).'; }
-      console.warn('Submit failed:', e);
+      // Fallback fire-and-forget: opaque request still reaches GAS in many setups
+      try{
+        await fetch(BACKEND_URL, { method:'POST', mode:'no-cors', body:new URLSearchParams({ name, score:String(sc) }) });
+        if(!silent) goStatus.textContent = 'Submitted (pending)';
+      }catch(e2){ if(!silent) goStatus.textContent = 'Submit failed.'; }
+      console.warn('Submit error:', e);
     }
   }
 
@@ -185,27 +201,25 @@
       for(let i=0;i<pipes.length;i++){ pipes[i].x -= PIPE_SPEED; }
       while(pipes.length && pipes[0].x + PIPE_W < -20){ pipes.shift(); }
 
-      // score + best
+      // score + best (use scaled hit radius)
       for(const p of pipes){
-        if(!p.passed && p.x + PIPE_W < bird.x - bird.r){
+        if(!p.passed && p.x + PIPE_W < bird.x - rHit()){
           p.passed = true; score++;
-          if(score > best){
-            best = score; localStorage.setItem('best_flappy', String(best));
-          }
+          if(score > best){ best = score; localStorage.setItem('best_flappy', String(best)); }
         }
       }
 
-      // walls
-      if(bird.y - bird.r < 0){ bird.y = bird.r; bird.vy = 0; }
-      if(bird.y + bird.r > H - GROUND_H){ alive = false; }
+      // walls (use scaled hit radius)
+      if(bird.y - rHit() < 0){ bird.y = rHit(); bird.vy = 0; }
+      if(bird.y + rHit() > H - GROUND_H){ alive = false; }
 
-      // collision with pipes
+      // collision with pipes (use scaled hit radius)
       for(const p of pipes){
         const pipeW = PIPE_W * PIPE_SCALE_X;
         const topRect = { x:p.x, y:0, w:pipeW, h:p.gapY };
         const botRect = { x:p.x, y:p.gapY + GAP_H, w:pipeW, h:H - GROUND_H - (p.gapY + GAP_H) };
-        if(circleIntersectsRect(bird.x, bird.y, bird.r, topRect) ||
-           circleIntersectsRect(bird.x, bird.y, bird.r, botRect)){
+        if(circleIntersectsRect(bird.x, bird.y, rHit(), topRect) ||
+           circleIntersectsRect(bird.x, bird.y, rHit(), botRect)){
           alive = false; break;
         }
       }
@@ -291,7 +305,7 @@
   function drawGround(){ ctx.fillStyle='#3e4c59'; ctx.fillRect(0, H-GROUND_H, W, GROUND_H); }
 
   function drawHUD(){
-    ctx.fillStyle='rgba(0,0,0,.25)'; ctx.fillRect(8,8,112,56);
+    ctx.fillStyle='rgba(0,0,0,.25)'; ctx.fillRect(8,8,132,56);
     ctx.fillStyle='#fff';
     ctx.font='bold 18px system-ui,-apple-system, Segoe UI, Roboto, Arial';
     ctx.fillText('Score: '+score, 16, 32);
@@ -337,6 +351,7 @@
     const name = (goName.value||'').trim() || 'Anonymous';
     submitScore(name, score);
   });
+  goName.addEventListener('keydown', (e)=>{ if(e.key==='Enter'){ e.preventDefault(); goSubmit.click(); } });
   goSkip.addEventListener('click', ()=> { goStatus.textContent = 'Skipped.'; });
   goAgain.addEventListener('click', reset);
 
@@ -346,4 +361,3 @@
   </script>
 </body>
 </html>
-
