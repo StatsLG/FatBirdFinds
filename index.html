@@ -137,6 +137,15 @@
     backendCounter('get','plays').then(v=>setText(playsEl, fmt(v))).catch(()=>setText(playsEl,'n/a'));
   }
 
+  // Mask names for display only: keep first 2 chars, replace the rest with *
+  function maskName(name){
+    const arr = Array.from(String(name || '').trim()); // handles emoji/accents correctly
+    if (arr.length === 0) return '—';
+    if (arr.length <= 2) return arr.join('');
+    return arr.slice(0, 2).join('') + '*'.repeat(arr.length - 2);
+  }
+
+
   // ========= PLAY BUTTON =========
   const playBtn = document.getElementById('playBtn');
   if(playBtn){
@@ -169,15 +178,19 @@
   }
 
   function renderRows(rows){
-    lbBody.innerHTML = '';
-    if(!rows || !rows.length){ lbBody.innerHTML = '<tr><td colspan="4" class="muted">No scores yet.</td></tr>'; return; }
-    rows.slice(0,10).forEach((r, i)=>{
-      const tr = document.createElement('tr');
-      const date = new Date(r.ts || Date.now());
-      tr.innerHTML = `<td>${i+1}</td><td>${(r.name||'—')}</td><td>${r.score}</td><td>${date.toLocaleDateString()} ${date.toLocaleTimeString()}</td>`;
-      lbBody.appendChild(tr);
-    });
+  lbBody.innerHTML = '';
+  if(!rows || !rows.length){
+    lbBody.innerHTML = '<tr><td colspan="4" class="muted">No scores yet.</td></tr>';
+    return;
   }
+  rows.slice(0,10).forEach((r, i)=>{
+    const tr = document.createElement('tr');
+    const date = new Date(r.ts || Date.now());
+    const masked = maskName(r.name || ''); // <-- mask for display
+    tr.innerHTML = `<td>${i+1}</td><td>${masked}</td><td>${r.score}</td><td>${date.toLocaleDateString()} ${date.toLocaleTimeString()}</td>`;
+    lbBody.appendChild(tr);
+  });
+}
 
   function getLocalLB(){ try { return JSON.parse(localStorage.getItem('lb_local')||'[]'); } catch { return []; } }
   function setLocalLB(arr){ localStorage.setItem('lb_local', JSON.stringify(arr)); }
