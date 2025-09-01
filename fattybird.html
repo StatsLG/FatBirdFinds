@@ -87,7 +87,7 @@
   // ---------- HITBOX TUNING ----------
   const HB = {
     bird: {
-      scale: 0.75,      // multiply visual radius (smaller = more forgiving)
+      scale: 0.8,      // multiply visual radius (smaller = more forgiving)
       offsetX: 0,       // shift hit center in px (left-/right+)
       offsetY: 2,       // shift hit center in px (up-/down+)
       useEllipse: false,// true to use ellipse instead of circle
@@ -96,8 +96,8 @@
     },
     pipe: {
       insetX: 8,        // trim pipe rects at left/right (px)
-      insetTop: 16,      // trim from top pipe bottom edge (px)
-      insetBottom: 16    // trim from bottom pipe top edge (px)
+      insetTop: 8,      // trim from top pipe bottom edge (px)
+      insetBottom: 8    // trim from bottom pipe top edge (px)
     },
     debug: false        // set true to draw hitboxes overlay
   };
