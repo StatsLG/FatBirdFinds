@@ -196,7 +196,7 @@
     try{
       const res = await fetch(`${BACKEND_URL}?limit=10`, {cache:'no-store'});
       const data = await res.json();
-      backendStatus && (backendStatus.textContent = ' · Backend: connected');
+      backendStatus && (backendStatus.textContent = ' · Leaderboard: connected');
       renderRows(Array.isArray(data)? data : []);
       return;
     }catch(e){ console.warn('Backend fetch failed, using local LB', e); backendStatus && (backendStatus.textContent = ' · Backend: offline'); }
