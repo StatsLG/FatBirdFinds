@@ -67,7 +67,7 @@
   "use strict";
   // ========= CONFIG =========
   // Shared leaderboard backend (Google Apps Script Web App — ends with /exec)
-  const BACKEND_URL = "https://script.google.com/macros/s/AKfycbwoZ8_K9itPH9e9tbUprW4cSeRzZcEu6x6rHZlGQjx-xT5qsbOV7Uvfk08KagoHkH1g/exec";
+  const BACKEND_URL = "https://script.google.com/macros/s/AKfycbyTeCvTQrtURE6Dd3O0SxB_qb4su9BZaSOPZHI_BsEAngGf33NFsoEGx6BRpAXn9Gw1/exec";
   // Auto-submit if we already know the player's name:
   const AUTO_SUBMIT_IF_NAME = true;
 
@@ -80,10 +80,31 @@
   const BIRD_IMG_SRC = `fbfnobg.png${ASSET_V}`;    // e.g., 'img/fbfnobg.png' + ASSET_V
   const PIPE_IMG_SRC = `swungnobg.png${ASSET_V}`;  // e.g., 'img/swungnobg.png' + ASSET_V
 
-  // If you changed scale visually, match collisions via rHit()
-  const BIRD_SCALE = 2.0;   // you said you set this to 2.0
+  // Visual scales
+  const BIRD_SCALE = 2.0;   // your chosen visual scale
   const PIPE_SCALE_X = 1.0;
-  function rHit(){ return 14 * BIRD_SCALE; } // 14 is the base radius (bird.r)
+
+  // ---------- HITBOX TUNING ----------
+  const HB = {
+    bird: {
+      scale: 0.85,      // multiply visual radius (smaller = more forgiving)
+      offsetX: 0,       // shift hit center in px (left-/right+)
+      offsetY: 2,       // shift hit center in px (up-/down+)
+      useEllipse: false,// true to use ellipse instead of circle
+      rxScale: 1.00,    // ellipse x radius multiplier
+      ryScale: 0.85     // ellipse y radius multiplier
+    },
+    pipe: {
+      insetX: 8,        // trim pipe rects at left/right (px)
+      insetTop: 8,      // trim from top pipe bottom edge (px)
+      insetBottom: 8    // trim from bottom pipe top edge (px)
+    },
+    debug: false        // set true to draw hitboxes overlay
+  };
+
+  function rVisual(){ return 14 * BIRD_SCALE; } // visual radius
+  function rHit(){ return rVisual() * HB.bird.scale; }
+  function birdCenter(){ return { x: bird.x + HB.bird.offsetX, y: bird.y + HB.bird.offsetY }; }
 
   // ========= CANVAS =========
   const canvas = document.getElementById('game');
@@ -123,8 +144,8 @@
 
   // Make Home links carry version (for cache-busting symmetry)
   const homeUrl = `index.html${VERSION ? `?v=${VERSION}` : ''}`;
-  homeBtn && (homeBtn.href = homeUrl);
-  goHome && (goHome.href = homeUrl);
+  if(homeBtn) homeBtn.href = homeUrl;
+  if(goHome) goHome.href = homeUrl;
 
   // Pre-fill name if saved
   goName.value = localStorage.getItem('player_name') || '';
@@ -192,6 +213,31 @@
     return (dx*dx + dy*dy) < r*r;
   }
 
+  function ellipseIntersectsRect(cx, cy, rx, ry, rect){
+    const sx = 1/rx, sy = 1/ry;
+    const rc = { x: rect.x*sx, y: rect.y*sy, w: rect.w*sx, h: rect.h*sy };
+    return circleIntersectsRect(cx*sx, cy*sy, 1, rc);
+  }
+
+  function pipeRects(p){
+    const pipeW = PIPE_W * PIPE_SCALE_X;
+    const top = { x:p.x, y:0, w:pipeW, h:p.gapY };
+    const botY = p.gapY + GAP_H;
+    const bot = { x:p.x, y:botY, w:pipeW, h:H - GROUND_H - botY };
+    const insetX = HB.pipe.insetX;
+    const topDef = {
+      x: top.x + insetX, y: top.y,
+      w: Math.max(0, top.w - insetX*2),
+      h: Math.max(0, top.h - HB.pipe.insetTop)
+    };
+    const botDef = {
+      x: bot.x + insetX, y: bot.y,
+      w: Math.max(0, bot.w - insetX*2),
+      h: Math.max(0, bot.h - HB.pipe.insetBottom)
+    };
+    return { top: topDef, bottom: botDef };
+  }
+
   function update(){
     if(alive && started){
       bird.vy = Math.min(bird.vy + GRAVITY, MAX_FALL);
@@ -201,30 +247,39 @@
       for(let i=0;i<pipes.length;i++){ pipes[i].x -= PIPE_SPEED; }
       while(pipes.length && pipes[0].x + PIPE_W < -20){ pipes.shift(); }
 
-      // score + best (use scaled hit radius)
+      // scoring (use scaled center+radius)
       for(const p of pipes){
-        if(!p.passed && p.x + PIPE_W < bird.x - rHit()){
+        const { x: cx } = birdCenter();
+        if(!p.passed && p.x + PIPE_W < cx - rHit()){
           p.passed = true; score++;
           if(score > best){ best = score; localStorage.setItem('best_flappy', String(best)); }
         }
       }
 
-      // walls (use scaled hit radius)
-      if(bird.y - rHit() < 0){ bird.y = rHit(); bird.vy = 0; }
-      if(bird.y + rHit() > H - GROUND_H){ alive = false; }
+      // ceiling / ground
+      {
+        const { x: cx, y: cy } = birdCenter();
+        if(cy - rHit() < 0){ bird.y = (rHit() - HB.bird.offsetY); bird.vy = 0; }
+        if(cy + rHit() > H - GROUND_H){ alive = false; }
+      }
 
-      // collision with pipes (use scaled hit radius)
+      // pipe collisions (deflated rects + optional ellipse)
       for(const p of pipes){
-        const pipeW = PIPE_W * PIPE_SCALE_X;
-        const topRect = { x:p.x, y:0, w:pipeW, h:p.gapY };
-        const botRect = { x:p.x, y:p.gapY + GAP_H, w:pipeW, h:H - GROUND_H - (p.gapY + GAP_H) };
-        if(circleIntersectsRect(bird.x, bird.y, rHit(), topRect) ||
-           circleIntersectsRect(bird.x, bird.y, rHit(), botRect)){
-          alive = false; break;
+        const { top: topRect, bottom: botRect } = pipeRects(p);
+        const { x: cx, y: cy } = birdCenter();
+        let hit = false;
+        if (HB.bird.useEllipse) {
+          const rx = rHit() * HB.bird.rxScale;
+          const ry = rHit() * HB.bird.ryScale;
+          hit = ellipseIntersectsRect(cx, cy, rx, ry, topRect) ||
+                ellipseIntersectsRect(cx, cy, rx, ry, botRect);
+        } else {
+          hit = circleIntersectsRect(cx, cy, rHit(), topRect) ||
+                circleIntersectsRect(cx, cy, rHit(), botRect);
         }
+        if(hit){ alive = false; break; }
       }
     } else if(!alive){
-      // trigger modal once on death
       if(modal.classList.contains('hidden')){ showModal(score); }
     }
     frame++;
@@ -319,10 +374,35 @@
       ctx.font='16px system-ui,-apple-system, Segoe UI, Roboto, Arial';
       ctx.fillText('Fly through the gaps!', W/2, H/2 + 16); ctx.textAlign='left';
     }
-    if(!alive){
-      // darken behind; modal handles the UI
-      ctx.fillStyle='rgba(0,0,0,.45)'; ctx.fillRect(0,0,W,H);
+    if(!alive){ ctx.fillStyle='rgba(0,0,0,.45)'; ctx.fillRect(0,0,W,H); }
+  }
+
+  function drawHitboxes(){
+    if (!HB.debug) return;
+    // Bird
+    const { x: cx, y: cy } = birdCenter();
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255,0,0,.8)';
+    ctx.lineWidth = 2;
+    if (HB.bird.useEllipse) {
+      const rx = rHit() * HB.bird.rxScale;
+      const ry = rHit() * HB.bird.ryScale;
+      ctx.beginPath(); ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI*2); ctx.stroke();
+    } else {
+      ctx.beginPath(); ctx.arc(cx, cy, rHit(), 0, Math.PI*2); ctx.stroke();
     }
+    ctx.restore();
+
+    // Pipes
+    ctx.save();
+    ctx.strokeStyle = 'rgba(0,255,0,.8)';
+    ctx.lineWidth = 2;
+    for (const p of pipes) {
+      const { top, bottom } = pipeRects(p);
+      ctx.strokeRect(top.x, top.y, top.w, top.h);
+      ctx.strokeRect(bottom.x, bottom.y, bottom.w, bottom.h);
+    }
+    ctx.restore();
   }
 
   function render(){
@@ -332,6 +412,7 @@
     drawBird();
     drawGround();
     drawHUD();
+    drawHitboxes();
   }
 
   function loop(){ update(); render(); requestAnimationFrame(loop); }
