@@ -117,7 +117,7 @@
       });
       if (!res.ok) throw new Error('HTTP '+res.status);
       const data = await res.json(); // {value: N}
-      backendStatus && (backendStatus.textContent = ' · Backend: connected');
+      backendStatus && (backendStatus.textContent = ' · Leaderboard: connected');
       return Number((data && data.value) || 0);
     }catch(e){
       // Fire-and-forget in case of blockers; still increments server counters
@@ -199,7 +199,7 @@
       backendStatus && (backendStatus.textContent = ' · Leaderboard: connected');
       renderRows(Array.isArray(data)? data : []);
       return;
-    }catch(e){ console.warn('Backend fetch failed, using local LB', e); backendStatus && (backendStatus.textContent = ' · Backend: offline'); }
+    }catch(e){ console.warn('Leaderboard fetch failed, using local LB', e); backendStatus && (backendStatus.textContent = ' · Backend: offline'); }
     renderRows(getLocalLB());
   }
 
@@ -209,7 +209,7 @@
     if(!score){ alert('You have no device best yet. Play the game first!'); return; }
     try{
       await fetch(BACKEND_URL, { method:'POST', body:new URLSearchParams({ name, score: String(score) }) });
-    }catch(e){ console.warn('Backend submit failed, storing locally', e); upsertLocal(name, score); }
+    }catch(e){ console.warn('Leaderboard submit failed, storing locally', e); upsertLocal(name, score); }
     await loadLeaderboard();
     alert('Score submitted!');
   }
