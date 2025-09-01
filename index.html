@@ -7,7 +7,7 @@
   <meta http-equiv="Expires" content="0" />
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Fatty Bird — Home</title>
+  <title>Fatty Bird Flies Home</title>
   <style>
     :root{ --bg:#0e1b2a; --fg:#e8f0fe; --muted:#9fb3c8; --accent:#52d67a; --card:#122033; }
     *{box-sizing:border-box}
@@ -30,17 +30,24 @@
     .right{margin-left:auto}
     input[type=text]{background:#0c1726; color:var(--fg); border:1px solid #274160; border-radius:10px; padding:8px 10px}
     .pill{background:#0c1726; border-radius:999px; padding:4px 10px; color:#cfe1ff}
+    .hero{ text-align:center; margin:8px 0 10px }
+    .logo{ width:min(220px, 50vw); height:auto; display:block; margin:0 auto 6px }
+    .site-title{ margin:0; font-size:clamp(28px,6vw,48px); line-height:1.1 }
   </style>
 </head>
 <body>
   <div class="container">
+    <div class="hero">
+      <img id="logo" alt="Fatty Bird logo" class="logo" src="fbflogo.png" />
+      <h1 class="site-title">Fatty Bird</h1>
+    </div>
+
     <header>
       <button id="resetBtn" class="btn" title="Clear localStorage & caches for this site" style="background:#ffb703;color:#00121f;display:none">Reset Site Data</button>
       <a id="playBtn" href="fattybird.html" class="btn" title="Launch the game">Play</a>
       <span id="buildTag" class="muted"></span>
       <span id="backendStatus" class="muted"></span>
     </header>
-
 
 
       <div class="card">
@@ -139,6 +146,14 @@
   }
   const buildTag = document.getElementById('buildTag');
   if(buildTag){ buildTag.textContent = `Build: ${VERSION}${isDev() ? ' (dev)' : ''}`; }
+
+  const logoEl = document.getElementById('logo');
+  if (logoEl){
+    const v = isDev() ? Date.now() : VERSION;
+    // If your logo is in a folder, mirror that path here
+    const base = 'fbflogo.png'; // e.g., 'img/fbflogo.png'
+    logoEl.src = `${base}?v=${v}`;
+  }
 
   // ========= LEADERBOARD =========
   const deviceBestEl = document.getElementById('deviceBest');
